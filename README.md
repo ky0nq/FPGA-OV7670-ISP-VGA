@@ -1,8 +1,8 @@
-# VGA_security_homecam
+# FPGA-OV7670-ISP-VGA
 
-**OV7670 기반 비접촉 패턴 인증 및 FPGA 영상 처리 시스템**
+**OV7670 카메라 입력 → FPGA ISP → VGA 출력 영상 처리 파이프라인과 비접촉 패턴 인증 보안 홈캠**
 
-파란색 마커의 이동 경로로 사용자를 인증하고, 인증 결과에 따라 홈캠 영상의 잠금 상태를 제어하는 FPGA 프로젝트입니다. Basys 3 보드 2대에 인증 단말과 홈캠을 각각 구성했으며, 카메라 입력부터 패턴 판정, 영상 필터, VGA 출력까지 SystemVerilog로 구현했습니다.
+OV7670 카메라 영상을 FPGA에서 직접 처리하는 ISP(Image Signal Processing) 파이프라인 — RGB565 캡처 · Frame Buffer · 2× Upscale / Zoom · Gaussian Blur · 색상 / Gamma / Night 필터 — 을 구현하고 VGA로 출력하는 프로젝트입니다. 이 파이프라인 위에 파란색 마커의 이동 경로로 사용자를 인증하는 기능을 더해, 인증 결과에 따라 홈캠 영상의 잠금 상태를 제어합니다. Basys 3 보드 2대에 인증 단말과 홈캠을 각각 구성했으며, 전 과정을 SystemVerilog로 구현했습니다.
 
 LOCK 상태에서는 홈캠 영상을 블러 처리하고, 인증에 성공하면 원본 영상과 필터·확대 기능을 사용할 수 있습니다. 두 보드는 **115200 bps UART로 인증 상태와 조작 명령을 교환**하며, 영상은 각 보드 내부에서 처리합니다.
 
@@ -47,7 +47,7 @@ LOCK 상태에서는 홈캠 영상을 블러 처리하고, 인증에 성공하�
 
 | 구분 | Board 1 · 인증 단말 | Board 2 · 홈캠 |
 |---|---|---|
-| Top module | [`system_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/Board_1/system_top.sv) | [`OV7670_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/Board_2/OV7670_top.sv) |
+| Top module | [`system_top`](Board_1/system_top.sv) | [`OV7670_top`](Board_2/OV7670_top.sv) |
 | 영상 입력 | 인증용 OV7670 | 홈캠용 OV7670 |
 | 핵심 처리 | 마커 추적, 패턴 인증, 사용자 입력 처리 | 블러, 색상·효과 필터, Zoom |
 | VGA 화면 | 인증 Grid, 추적 경로, 단말기 UI | 잠금 상태에 따른 홈캠 영상 |
@@ -336,7 +336,7 @@ Zoom의 초기 선택 영역은 **좌상단**입니다. `SW1`을 껐다 켜면 �
 ## Repository 구조
 
 ```text
-VGA_security_homecam/
+FPGA-OV7670-ISP-VGA/
 ├── Board_1/                         # 인증 단말 RTL (Top : system_top)
 │   ├── system_top.sv
 │   ├── camera_frontend.sv · OV7670_MemCNTL.sv · framebuffer.sv
@@ -362,4 +362,4 @@ VGA_security_homecam/
 └── README.md
 ```
 
-위 트리는 핵심 파일만 표시했습니다. 전체 RTL은 [`Board_1`](https://github.com/ky0nq/VGA_security_homecam/tree/main/Board_1)과 [`Board_2`](https://github.com/ky0nq/VGA_security_homecam/tree/main/Board_2)에 있습니다.
+위 트리는 핵심 파일만 표시했습니다. 전체 RTL은 [`Board_1`](Board_1)과 [`Board_2`](Board_2)에 있습니다.
