@@ -6,11 +6,29 @@
 
 LOCK 상태에서는 홈캠 영상을 블러 처리하고, 인증에 성공하면 원본 영상과 필터·확대 기능을 사용할 수 있습니다. 두 보드는 **115200 bps UART로 인증 상태와 조작 명령을 교환**하며, 영상은 각 보드 내부에서 처리합니다.
 
-| 프로젝트 기간 | 교육 과정 | 팀 구성 |
-|---|---|---|
-| 2026.08.31 ~ 2026.09.08 | 온디바이스 AI 시스템반도체 설계 2기 | 6명 |
+| 항목 | 내용 |
+|---|---|
+| 기간 | 2026.08.31 ~ 2026.09.08 |
+| 팀 | 우리집 이제 Safe조? (6인) |
+| 보드 | Digilent Basys 3 (Artix-7) × 2 |
+| 언어 · 도구 | SystemVerilog · Python / Vivado 2020.2, VCS · Verdi (UVM), Vivado Simulator |
 
-[프로젝트 폴더 구조](#프로젝트-폴더-구조) · [시스템 구조](#시스템-아키텍처) · [개발 사양](#개발-환경-및-사양) · [핵심 설계](#핵심-설계) · [조작 방법](#조작-방법) · [검증](#검증) · [구현 결과](#설계-개선과-구현-결과)
+## 핵심 결과
+
+- 영상 필터 Python Golden 비교: 색상 · Gamma · Night 필터 **Exact Match 100%**, 16×16 Blur 95.99% (76,800 픽셀, 평균 채널 오차 0.0319)
+- 카메라 · VGA UVM: **Line · Toggle · FSM · Condition · Branch Coverage 100%**
+- 보드 간 통합 제어: `AUTH_SUCCESS` 5개 검사 PASS · Top 기능 검증 8개 Covergroup **Functional Coverage 100%**
+- 블러 윈도우 20×20 → 16×16, 합산 구조 조정으로 LUT **63% → 45%** · LUTRAM 69% → 55% · FF 54% → 41%
+
+## 목차
+
+1. [팀 및 담당 역할](#팀-및-담당-역할)
+2. [시스템 구조](#시스템-구조)
+3. [하드웨어 설계](#하드웨어-설계)
+4. [검증](#검증)
+5. [구현 결과](#구현-결과)
+6. [빌드 및 실행](#빌드-및-실행)
+7. [Repository 구조](#repository-구조)
 
 ## 팀 및 담당 역할
 
@@ -25,50 +43,11 @@ LOCK 상태에서는 홈캠 영상을 블러 처리하고, 인증에 성공하�
 | 정광근 | Control Unit, 데이터패스 통합, 카메라·VGA, Board 1·2 UVM 검증 |
 | 조강혁 | 카메라·VGA UVM 검증 |
 
-## 프로젝트 폴더 구조
-
-GitHub에는 기능별 RTL과 검증 소스를 정리하고, 최종 제출 패키지에는 보드별 Vivado 프로젝트와 구현 결과를 포함했습니다.
-
-```text
-VGA_security_homecam/
-├── BOARD_1/                         # 인증 단말 RTL
-│   ├── system_top.sv
-│   ├── auth_path.sv
-│   ├── control_unit.sv
-│   ├── board1_video_path.sv
-│   └── uart_packet_controller.sv
-├── BOARD_2/                         # 홈캠 영상 처리 RTL
-│   ├── OV7670_top.sv
-│   ├── vga_cam.sv
-│   ├── video_path.sv
-│   ├── gaussian_filter.sv
-│   └── uart_link.sv
-├── Tb/                              # 보드 간 제어 시나리오
-├── UVM/
-│   ├── OV7670_VGA/
-│   │   ├── scenario1/               # Camera·VGA·SCCB UVM
-│   │   └── scenario2/               # Predictor·Scoreboard 기반 UVM
-│   └── Top/                        # Top System UVM
-└── README.md
-```
-
-위 트리는 핵심 파일만 표시했습니다. [`BOARD_1`](https://github.com/ky0nq/VGA_security_homecam/tree/main/BOARD_1)과 [`BOARD_2`](https://github.com/ky0nq/VGA_security_homecam/tree/main/BOARD_2)에 세부 RTL을, [`Tb`](https://github.com/ky0nq/VGA_security_homecam/tree/main/Tb)와 [`UVM/OV7670_VGA`](https://github.com/ky0nq/VGA_security_homecam/tree/main/UVM/OV7670_VGA)에 검증 소스를 정리했습니다.
-
-## 주요 기능
-
-- **비접촉 패턴 인증:** 파란색 마커의 Bounding Box 중심을 3×3 Grid에 매핑하고, Grid 진입 순서를 등록 패턴과 비교합니다.
-- **인증 화면 시각화:** 격자, 마커 이동 경로, 화면 테두리와 라벨을 VGA 영상 위에 표시합니다.
-- **잠금 상태에 따른 영상 제어:** LOCK에서는 블러를 적용하고, UNLOCK에서는 원본·색상 필터·밝기 효과를 선택합니다.
-- **선택 영역 확대:** 전체 영상 보기와 4분면 중 한 영역을 확대하는 Zoom을 제공합니다.
-- **자동 재잠금 및 시도 제한:** 약 10초간 UART 명령을 받지 않으면 재잠금하고, 인증 3회 실패 시 60초 Lockout을 적용합니다.
-- **계층별 검증:** 영상 경로는 UVM과 Golden Reference로, 보드 간 제어 경로는 시나리오 Testbench로 검증합니다.
-
-
-## 시스템 아키텍처
+## 시스템 구조
 
 | 구분 | Board 1 · 인증 단말 | Board 2 · 홈캠 |
 |---|---|---|
-| Top module | [`system_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/BOARD_1/system_top.sv) | [`OV7670_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/BOARD_2/OV7670_top.sv) |
+| Top module | [`system_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/Board_1/system_top.sv) | [`OV7670_top`](https://github.com/ky0nq/VGA_security_homecam/blob/main/Board_2/OV7670_top.sv) |
 | 영상 입력 | 인증용 OV7670 | 홈캠용 OV7670 |
 | 핵심 처리 | 마커 추적, 패턴 인증, 사용자 입력 처리 | 블러, 색상·효과 필터, Zoom |
 | VGA 화면 | 인증 Grid, 추적 경로, 단말기 UI | 잠금 상태에 따른 홈캠 영상 |
@@ -77,7 +56,16 @@ VGA_security_homecam/
 
 <img width="1786" height="1263" alt="Top-Top drawio" src="https://github.com/user-attachments/assets/9c786388-59dc-495d-b9a4-abca6fbcc1cf" />
 
-### 동작 순서
+**주요 기능**
+
+- **비접촉 패턴 인증:** 파란색 마커의 Bounding Box 중심을 3×3 Grid에 매핑하고, Grid 진입 순서를 등록 패턴과 비교합니다.
+- **인증 화면 시각화:** 격자, 마커 이동 경로, 화면 테두리와 라벨을 VGA 영상 위에 표시합니다.
+- **잠금 상태에 따른 영상 제어:** LOCK에서는 블러를 적용하고, UNLOCK에서는 원본·색상 필터·밝기 효과를 선택합니다.
+- **선택 영역 확대:** 전체 영상 보기와 4분면 중 한 영역을 확대하는 Zoom을 제공합니다.
+- **자동 재잠금 및 시도 제한:** 약 10초간 UART 명령을 받지 않으면 재잠금하고, 인증 3회 실패 시 60초 Lockout을 적용합니다.
+- **계층별 검증:** 영상 경로는 UVM과 Golden Reference로, 보드 간 제어 경로는 시나리오 Testbench로 검증합니다.
+
+**동작 순서**
 
 1. 두 보드를 초기화하고 OV7670 설정을 완료합니다. 홈캠은 LOCK 상태의 블러 영상을 출력합니다.
 2. 인증 단말에서 인증 스위치를 켜고 파란색 마커로 등록 패턴을 입력합니다.
@@ -85,9 +73,9 @@ VGA_security_homecam/
 4. 버튼과 스위치로 필터 그룹, 필터 효과, Zoom 영역을 선택합니다.
 5. 약 10초간 명령이 수신되지 않으면 Board 2가 재잠금하고 `0x80`을 반환하여 두 보드의 상태를 맞춥니다.
 
-## 개발 환경 및 사양
+### 사양
 
-| 항목 | 사양 |
+| 항목 | 내용 |
 |---|---|
 | FPGA 보드 | Digilent Basys 3 × 2 |
 | FPGA 디바이스 | Xilinx Artix-7 |
@@ -102,7 +90,7 @@ VGA_security_homecam/
 | 보드 간 통신 | UART 115200 bps, 8N1, LSB first |
 | 사용자 입력 | Basys 3 스위치 및 푸시 버튼 |
 
-## 핵심 설계
+## 하드웨어 설계
 
 ### 1. 마커 추적과 패턴 인증
 
@@ -141,6 +129,12 @@ RGB565를 공통 5-bit 채널 기준으로 비교해 `B ≥ 20`, `B ≥ R + 10`,
 
 <img width="342" height="203" alt="image" src="https://github.com/user-attachments/assets/aebc1671-ee92-45ba-bd71-3840d23aef95" />
 
+**AUTH PATH 블록도**
+
+<p align="center">
+  <img src="docs/auth_path_block.png" alt="AUTH PATH Block Diagram" width="720">
+</p>
+
 ### 2. 인증 경로 Overlay
 
 마커의 이동 경로를 Bresenham 알고리즘으로 선분화하고, 1-bit 경로 메모리에 기록해 VGA 영상에 합성합니다. 좌표 변화 완화, 미세 이동 무시, 큰 위치 변화 배제 조건을 적용해 표시 경로의 흔들림을 줄였습니다.
@@ -154,6 +148,10 @@ SCCB 초기화는 전원 안정화 대기 이후 OV7670 설정 시퀀스를 전�
 Frame Buffer는 카메라 클록으로 쓰고 시스템 클록으로 읽는 Dual-clock 구조입니다. 읽기 주소를 표시 좌표에 맞게 변환하고 RGB565를 RGB444로 변환해 VGA 출력으로 전달합니다.
 
 ### 4. 영상 필터와 Zoom
+
+<p align="center">
+  <img src="docs/board2_video_path.png" alt="Board 2 Video Path" width="720">
+</p>
 
 | 처리 경로 | 구현 내용 |
 |---|---|
@@ -205,26 +203,6 @@ Board 2 → Board 1의 `0x80`은 **별도의 자동 재잠금 알림**입니다.
 
 </details>
 
-## 조작 방법
-
-아래 매핑은 최종 Vivado 프로젝트의 RTL과 XDC를 기준으로 합니다.
-
-| 보드 | 입력 | 동작 |
-|---|---|---|
-| 공통 | `SW15 = 0` | Reset |
-| 공통 | `SW15 = 1` | 실행 |
-| Board 1 | `SW0 = 1` | 인증 활성화 |
-| Board 1 | `SW0 = 0` | 인증 해제 및 잠금 |
-| Board 1 | `SW1` | Zoom ON/OFF |
-| Board 1 | `SW2 = 0` | 색상 필터 그룹 |
-| Board 1 | `SW2 = 1` | 밝기·Night 효과 그룹 |
-| Board 1 | `BTNU` | 선택 그룹의 필터 순환 |
-| Board 1 | `BTNR` | Zoom 우상단 선택 |
-| Board 1 | `BTNL` | Zoom 좌하단 선택 |
-| Board 1 | `BTND` | Zoom 우하단 선택 |
-
-Zoom의 초기 선택 영역은 **좌상단**입니다. `SW1`을 껐다 켜면 좌상단으로 돌아갑니다. 필터 및 Zoom 조작은 잠금 해제 후 사용합니다. Lockout 중에는 `SW0`를 내려도 60초 제한이 유지됩니다.
-
 ## 검증
 
 영상 데이터와 제어 상태를 서로 다른 검증 환경에서 확인했습니다.
@@ -239,7 +217,13 @@ Python Golden Reference와 RTL 출력을 픽셀 단위로 비교했습니다.
 | Gamma 밝기 설정 2종 / Night | 각 100% | 0 |
 | 16×16 Blur | 95.99% | 8 / 15 |
 
-블러 비교 대상은 **76,800픽셀**이며 평균 채널 오차는 **0.0319**입니다. 
+블러 비교 대상은 **76,800픽셀**이며 평균 채널 오차는 **0.0319**입니다.
+
+**원본 · Python Golden · RTL 결과 비교 (Gaussian Blur)**
+
+<p align="center">
+  <img src="docs/gaussian_compare.png" alt="Gaussian Blur: Original / Golden / RTL" width="100%">
+</p>
 
 ### 카메라·VGA UVM
 
@@ -268,47 +252,21 @@ Camera Driver, Monitor, Predictor, Scoreboard를 구성해 영상 입력과 예�
 
 `AUTH_SUCCESS` 시나리오는 **5개 검사 PASS, FAIL 0**, Top 기능 검증은 **정의한 8개 Covergroup 기준 Functional Coverage 100%**를 기록했습니다.
 
-통합 제어 Testbench는 인증 결과를 주입하거나 인증 상태를 설정해 이후의 UART·FSM 연결을 검증합니다. 
+통합 제어 Testbench(`Tb/`)는 인증 결과를 주입하거나 인증 상태를 설정해 이후의 UART·FSM 연결을 검증합니다.
+
+| Testbench | 시나리오 |
+|---|---|
+| `tb_top_VGA_s01_locked_button` | 잠금 상태에서 디바운스된 `BTN_U` 입력이 전송되지 않는지 확인 |
+| `tb_top_VGA_s03_all_controls` | 인증 후 Zoom · Effect · 방향 버튼 조합 패킷과 Board 2 반영 |
+| `tb_top_VGA_s04_fast_repeat_merge` | 같은 버튼의 빠른 반복 입력 처리 |
+| `tb_top_VGA_s05_timeout_relock` | 수신 대기 만료 후 `0x80` 반환과 양쪽 재잠금 |
+| `tb_top_VGA_uart_btn_u` | 버튼 입력 → UART 패킷 → Board 2 디코드 경로 |
 
 <img width="1664" height="757" alt="image" src="https://github.com/user-attachments/assets/cfb53339-5468-4ede-9ff4-9263d6211dd6" />
 
 <img width="1807" height="794" alt="image" src="https://github.com/user-attachments/assets/23feb613-43fc-4394-8690-9d008a500376" />
 
-## 설계 개선과 구현 결과
-
-### 블러 윈도우 및 연산 구조 조정
-
-초기 20×20 블러는 19개 Line Buffer와 400개 Pixel Tap을 사용해 자원 부담이 컸습니다. 윈도우를 16×16으로 줄이고 합산 구조를 조정해 최종 영상 경로에 통합했습니다.
-
-| 항목 | 초기 구조 | 최종 구조 |
-|---|---:|---:|
-| 윈도우 | 20×20 | 16×16 |
-| Line Buffer | 19개 | 15개 |
-| Pixel Tap | 400개 | 256개 |
-| 평균 계산 | `sum / 400` | `sum / 256` |
-
-`sum / 256`은 8-bit Right Shift와 동등한 상수 연산입니다. 자원 개선은 윈도우 크기와 합산 구조를 함께 조정한 결과로 평가했습니다.
-
-| 자원 | 변경 전 보고값 | 변경 후 보고값 | 감소 폭 |
-|---|---:|---:|---:|
-| LUT | 63% | 45% | 18%p |
-| LUTRAM | 69% | 55% | 14%p |
-| FF | 54% | 41% | 13%p |
-
-<img width="1645" height="772" alt="image" src="https://github.com/user-attachments/assets/b72fca56-19ec-4c05-b565-b617da1378d5" />
-
-<img width="1651" height="777" alt="image" src="https://github.com/user-attachments/assets/c00c38c6-e816-40a8-8a0c-d46df29bec07" />
-
-### 추적 안정성과 입력 이벤트 개선
-
-| 문제 | 적용한 설계 |
-|---|---|
-| 배경의 파란색 잡음으로 Bounding Box가 커짐 | 채널 차이 임계값과 최소 검출 픽셀 수 조정 |
-| Grid 경계와 미세 움직임에서 입력이 흔들림 | 3프레임 안정화, 중복 진입 억제, 표시 좌표 완화 |
-| 동일 버튼의 반복 입력을 상태 비트만으로 구분하기 어려움 | 스위치 상태와 버튼 이벤트 분리, 수신 시 1클록 펄스 생성 |
-| 카메라·제어·VGA의 클록과 처리 시점이 다름 | Dual-clock Frame Buffer, CDC 이벤트 전달, 데이터·동기 신호 지연 정렬 |
-
-### 최종 FPGA 자원 사용량
+## 구현 결과
 
 | 자원 | Board 1 · `system_top` | Board 2 · `OV7670_top` |
 |---|---:|---:|
@@ -318,8 +276,7 @@ Camera Driver, Monitor, Predictor, Scoreboard를 구성해 영상 입력과 예�
 | BRAM Tile | 39.5 / 50 · 79% | 36.5 / 50 · 73% |
 | DSP | 1 / 90 | 0 / 90 |
 
-
-### 최종 프로젝트 실행
+## 빌드 및 실행
 
 | 보드 | 프로젝트 경로 | Top |
 |---|---|---|
@@ -340,4 +297,53 @@ Camera Driver, Monitor, Predictor, Scoreboard를 구성해 영상 입력과 예�
 | JA2 / L2 · TX | JA2 / L2 · RX |
 | GND | GND |
 
+### 조작 방법
 
+아래 매핑은 최종 Vivado 프로젝트의 RTL과 XDC를 기준으로 합니다.
+
+| 보드 | 입력 | 동작 |
+|---|---|---|
+| 공통 | `SW15 = 0` | Reset |
+| 공통 | `SW15 = 1` | 실행 |
+| Board 1 | `SW0 = 1` | 인증 활성화 |
+| Board 1 | `SW0 = 0` | 인증 해제 및 잠금 |
+| Board 1 | `SW1` | Zoom ON/OFF |
+| Board 1 | `SW2 = 0` | 색상 필터 그룹 |
+| Board 1 | `SW2 = 1` | 밝기·Night 효과 그룹 |
+| Board 1 | `BTNU` | 선택 그룹의 필터 순환 |
+| Board 1 | `BTNR` | Zoom 우상단 선택 |
+| Board 1 | `BTNL` | Zoom 좌하단 선택 |
+| Board 1 | `BTND` | Zoom 우하단 선택 |
+
+Zoom의 초기 선택 영역은 **좌상단**입니다. `SW1`을 껐다 켜면 좌상단으로 돌아갑니다. 필터 및 Zoom 조작은 잠금 해제 후 사용합니다. Lockout 중에는 `SW0`를 내려도 60초 제한이 유지됩니다.
+
+## Repository 구조
+
+```text
+VGA_security_homecam/
+├── Board_1/                         # 인증 단말 RTL (Top : system_top)
+│   ├── system_top.sv
+│   ├── camera_frontend.sv · OV7670_MemCNTL.sv · framebuffer.sv
+│   ├── auth_path.sv                 # blue_threshold → blue_blob_tracker → grid_mapper → grid_stabilizer
+│   ├── auth_control_unit.sv         # 패턴 인증 FSM (IDLE / PATTERN_INPUT / FINAL_HOLD)
+│   ├── board1_control_unit.sv       # 잠금 · 실패 제어 FSM (IDLE / AUTH_TRACK / UNLOCKED / LOCKOUT)
+│   ├── board1_video_path.sv         # framebuffer → rom_reader_upscale → grid_overlay · tracking_path_overlay
+│   └── uart_packet_controller.sv    # 상태 · 조작 패킷 송신, 0x80 재잠금 수신
+├── Board_2/                         # 홈캠 영상 처리 RTL (Top : OV7670_top)
+│   ├── OV7670_top.sv · vga_cam.sv
+│   ├── video_path.sv                # vga_cam(Zoom) → gaussian_filter → filter_control → filter_apply
+│   ├── filter_control.sv            # pink · blue · orange · gray · gamma · night 필터 선택
+│   ├── uart_link.sv · uart_decoder.sv
+│   └── counter_10s.sv               # UART 수신이 10초간 없으면 0x80 반환 → 자동 재잠금
+├── Tb/                              # 보드 간 제어 시나리오 Testbench
+│   ├── top_VGA_tb_fixture.sv
+│   ├── tb_top_VGA_s01_locked_button.sv
+│   ├── tb_top_VGA_s03_all_controls.sv
+│   ├── tb_top_VGA_s04_fast_repeat_merge.sv
+│   ├── tb_top_VGA_s05_timeout_relock.sv
+│   └── tb_top_VGA_uart_btn_u.sv
+├── docs/                            # README 이미지
+└── README.md
+```
+
+위 트리는 핵심 파일만 표시했습니다. 전체 RTL은 [`Board_1`](https://github.com/ky0nq/VGA_security_homecam/tree/main/Board_1)과 [`Board_2`](https://github.com/ky0nq/VGA_security_homecam/tree/main/Board_2)에 있습니다.
