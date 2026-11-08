@@ -207,7 +207,7 @@ Board 2 → Board 1의 `0x80`은 **별도의 자동 재잠금 알림**입니다.
 
 영상 데이터와 제어 상태를 서로 다른 검증 환경에서 확인했습니다.
 
-### 영상 필터 Golden Reference 비교
+### 마커 검출 · 영상 필터 Golden Reference 비교
 
 Python Golden Reference와 RTL 출력을 픽셀 단위로 비교했습니다.
 
@@ -217,12 +217,28 @@ Python Golden Reference와 RTL 출력을 픽셀 단위로 비교했습니다.
 | Gamma 밝기 설정 2종 / Night | 각 100% | 0 |
 | 16×16 Blur | 95.99% | 8 / 15 |
 
-블러 비교 대상은 **76,800픽셀**이며 평균 채널 오차는 **0.0319**입니다.
+- Blue Object Detection
 
-**원본 · Python Golden · RTL 결과 비교 (Gaussian Blur)**
+파란색 마커의 픽셀 수, Bounding Box, 중심 좌표를 추출합니다. 마커 위치가 바뀌어도 객체 추적이 정상 동작하는 것을 확인했습니다.
 
 <p align="center">
-  <img src="docs/gaussian_compare.png" alt="Gaussian Blur: Original / Golden / RTL" width="100%">
+  <img src="docs/blue_detect_result.png" alt="Blue Object Detection Result" width="100%">
+</p>
+
+- Gaussian Filter
+
+76,800 픽셀을 비교해 Exact Match 95.99%, 평균 채널 오차 0.0319를 확인했습니다.
+
+<p align="center">
+  <img src="docs/gaussian_result.png" alt="Gaussian Filter: Original / Golden / RTL" width="100%">
+</p>
+
+- Effect Filter (Gamma · Night)
+
+Golden Reference와 RTL 출력이 Exact Match 100%로 일치합니다.
+
+<p align="center">
+  <img src="docs/effect_filter_result.png" alt="Effect Filter Comparison Result" width="100%">
 </p>
 
 ### 카메라·VGA UVM
